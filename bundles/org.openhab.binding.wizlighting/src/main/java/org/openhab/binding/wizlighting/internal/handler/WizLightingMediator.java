@@ -16,9 +16,9 @@ import java.util.Set;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.eclipse.smarthome.core.thing.Thing;
 import org.openhab.binding.wizlighting.internal.discovery.WizLightingDiscoveryService;
 import org.openhab.binding.wizlighting.internal.entities.WizLightingResponse;
+import org.openhab.core.thing.Thing;
 
 /**
  * The {@link WizLightingMediator} is responsible for receiving all the sync

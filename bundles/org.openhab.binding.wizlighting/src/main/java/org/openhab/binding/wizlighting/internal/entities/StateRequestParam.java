@@ -13,7 +13,7 @@
 package org.openhab.binding.wizlighting.internal.entities;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
-import org.eclipse.smarthome.core.library.types.OnOffType;
+import org.openhab.core.library.types.OnOffType;
 
 /**
  * This POJO represents State Request Param
