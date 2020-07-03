@@ -15,8 +15,13 @@ package org.openhab.binding.bondhome.internal.discovery;
 import static org.eclipse.smarthome.core.thing.Thing.*;
 import static org.openhab.binding.bondhome.internal.BondHomeBindingConstants.*;
 
+import java.io.IOException;
+import java.net.InetAddress;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 
+import javax.jmdns.ServiceEvent;
 import javax.jmdns.ServiceInfo;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
@@ -24,6 +29,11 @@ import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.smarthome.config.discovery.DiscoveryResult;
 import org.eclipse.smarthome.config.discovery.DiscoveryResultBuilder;
 import org.eclipse.smarthome.config.discovery.mdns.MDNSDiscoveryParticipant;
+import org.eclipse.smarthome.config.discovery.mdns.internal.MDNSDiscoveryService;
+import org.eclipse.smarthome.io.transport.mdns.MDNSClient;
+import org.eclipse.smarthome.io.transport.mdns.internal.MDNSClientImpl;
+import org.openhab.binding.bondhome.internal.api.BondHttpApi;
+import org.openhab.binding.bondhome.internal.api.BondSysVersion;
 import org.eclipse.smarthome.core.thing.ThingTypeUID;
 import org.eclipse.smarthome.core.thing.ThingUID;
 import org.osgi.service.component.annotations.Component;
@@ -40,8 +50,7 @@ import org.slf4j.LoggerFactory;
 public class BondMDNSDiscoveryParticipant implements MDNSDiscoveryParticipant {
 
     private final Logger logger = LoggerFactory.getLogger(BondMDNSDiscoveryParticipant.class);
-
-    private static final String SERVICE_TYPE = "_bond._tcp.local.";
+    private static final String SERVICE_TYPE = "_bond._tcp.local.";// subtype jg7krkvzmja6
 
     @Override
     public Set<ThingTypeUID> getSupportedThingTypeUIDs() {
@@ -64,11 +73,49 @@ public class BondMDNSDiscoveryParticipant implements MDNSDiscoveryParticipant {
     @Override
     public @Nullable DiscoveryResult createResult(ServiceInfo service) {
         ThingUID thingUID = getThingUID(service);
+        
         if (thingUID != null) {
+
+            String hostAddress = "";
+            BondHttpApi api = new BondHttpApi();
+            BondSysVersion bsv;
+
+            Map<String, Object> properties = new HashMap<>(2);
+            properties.put(PROPERTY_SERIAL_NUMBER, service.getName());
+            properties.put(CONFIG_BOND_ID, service.getName());
+
+            InetAddress[] addresses = service.getInetAddresses();
+
+            // discovery must include an ipAddress
+            if (addresses.length > 0 && addresses[0] != null) {
+                hostAddress = addresses[0].getHostAddress();
+            }
+            
+            if(hostAddress.length() == 0) {
+                // try host addresses
+                String[] hostAddresses = service.getHostAddresses();
+                if(hostAddresses.length > 0 && hostAddresses[0] != null) {
+                    hostAddress = hostAddresses[0];
+                }
+            }
+
+            if(hostAddress.length() == 0) {
+                logger.debug("Discovered Bond Bridge (No Ip - passing): {}", service);
+                return null;
+            }
+
             logger.debug("Discovered Bond Bridge: {}", service);
-            return DiscoveryResultBuilder.create(thingUID).withProperty(PROPERTY_SERIAL_NUMBER, service.getName())
-                    .withLabel("Bond Bridge").withRepresentationProperty(service.getName()).build();
+            properties.put(CONFIG_IP_ADDRESS, hostAddress);
+
+            final DiscoveryResult discoveryResult = DiscoveryResultBuilder.create(thingUID)
+                .withProperty(CONFIG_IP_ADDRESS, properties.get(CONFIG_IP_ADDRESS))
+                .withThingType(THING_TYPE_BOND_BRIDGE).withLabel(BOND_BRIDGE_NAME)
+                .withRepresentationProperty(CONFIG_BOND_ID)
+                .build();
+
+            return discoveryResult;
         }
+
         return null;
     }
 }

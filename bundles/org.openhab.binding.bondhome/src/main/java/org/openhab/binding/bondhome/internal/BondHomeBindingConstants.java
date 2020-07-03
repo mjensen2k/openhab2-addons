@@ -109,10 +109,12 @@ public class BondHomeBindingConstants {
      * Configuration arguments
      */
     public static final String CONFIG_BOND_ID = "bondId";
-    public static final String CONFIG_IP_ADDRESS = "bondIpAddress";
+    public static final String CONFIG_IP_ADDRESS = "bridgeIP";
     public static final String CONFIG_LOCAL_TOKEN = "localToken";
     public static final String CONFIG_DEVICE_ID = "deviceId";
     public static final String CONFIG_LATEST_HASH = "lastDeviceConfigurationHash";
+    public static final String CONFIG_LOCATION = "location";
+    public static final String CONFIG_NAME = "name";
 
     /**
      * Device Properties
@@ -145,4 +147,7 @@ public class BondHomeBindingConstants {
     public static final String BOND_BRIDGE_MAKE = "Olibra";
     public static final String BOND_BRIDGE_MODEL = "BD-1000";
     public static final String BOND_BRIDGE_BRANDING = "O_BD-1000";
+
+    public static final String BOND_BRIDGE_NAME = "Bond Bridge";
+    public static final String BOND_BRIDGE_LOCATION = "Home";
 }

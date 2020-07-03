@@ -23,21 +23,23 @@ import org.eclipse.jdt.annotation.Nullable;
  *
  * @author Sara Geleskie Damiano - Initial contribution
  */
-@NonNullByDefault
+
 public class BondBridgeConfiguration {
 
     /**
      * Configuration for a Bond Bridge
      */
-    public String bondId = API_MISSING_BOND_ID;
-    public String localToken = API_MISSING_LOCAL_TOKEN;
-    public @Nullable String bondIpAddress;
+    public String bondId;
+    public String localToken;
+    public String bridgeIP;// changed to match the json returned - will then auto populate on discovery
+    public String name;
+    public String location;
 
-    public @Nullable String getIpAddress() {
-        return bondIpAddress;
+    public String getIpAddress() {
+        return bridgeIP;
     }
 
     public void setIpAddress(String bondIpAddress) {
-        this.bondIpAddress = bondIpAddress;
+        this.bridgeIP = bondIpAddress;
     }
 }

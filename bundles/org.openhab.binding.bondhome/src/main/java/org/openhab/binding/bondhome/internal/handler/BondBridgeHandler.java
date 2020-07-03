@@ -21,26 +21,34 @@ import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.californium.scandium.ConnectionListener;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.smarthome.config.core.Configuration;
 import org.eclipse.smarthome.core.common.ThreadPoolManager;
 import org.eclipse.smarthome.core.thing.Bridge;
+import org.eclipse.smarthome.core.thing.Channel;
 import org.eclipse.smarthome.core.thing.ChannelUID;
 import org.eclipse.smarthome.core.thing.Thing;
 import org.eclipse.smarthome.core.thing.ThingStatus;
 import org.eclipse.smarthome.core.thing.ThingStatusDetail;
+import org.eclipse.smarthome.core.thing.ThingStatusInfo;
+import org.eclipse.smarthome.core.thing.ThingTypeUID;
+import org.eclipse.smarthome.core.thing.ThingUID;
 import org.eclipse.smarthome.core.thing.binding.BaseBridgeHandler;
+import org.eclipse.smarthome.core.thing.binding.BridgeHandler;
 import org.eclipse.smarthome.core.thing.binding.ThingHandler;
 import org.eclipse.smarthome.core.types.Command;
 import org.openhab.binding.bondhome.internal.api.BPUPListener;
 import org.openhab.binding.bondhome.internal.api.BPUPUpdate;
+import org.openhab.binding.bondhome.internal.api.BondBridgeState;
 import org.openhab.binding.bondhome.internal.api.BondDeviceState;
 import org.openhab.binding.bondhome.internal.api.BondHttpApi;
 import org.openhab.binding.bondhome.internal.api.BondSysVersion;
@@ -55,7 +63,7 @@ import org.slf4j.LoggerFactory;
  * @author Sara Geleskie Damiano - Initial contribution
  */
 @NonNullByDefault
-public class BondBridgeHandler extends BaseBridgeHandler {
+public class BondBridgeHandler extends BaseBridgeHandler implements Bridge {
 
     private final Logger logger = LoggerFactory.getLogger(BondBridgeHandler.class);
 
@@ -99,15 +107,19 @@ public class BondBridgeHandler extends BaseBridgeHandler {
     private void initializeThing() {
         config = getConfigAs(BondBridgeConfiguration.class);
         if (config != null) {
-            if (config.bondIpAddress == null) {
+            if (config.bridgeIP == null) {
                 try {
                     logger.trace("IP address of Bond {} is unknown", config.bondId);
+
                     String lookupAddress = config.bondId + ".local";
                     logger.trace("Attempting to get IP address for Bond Bridge {}", lookupAddress);
+
                     InetAddress ia = InetAddress.getByName(lookupAddress);
                     String ip = ia.getHostAddress();
+
                     Configuration c = editConfiguration();
                     c.put(CONFIG_IP_ADDRESS, ip);
+
                     updateConfiguration(c);
                 } catch (UnknownHostException ignored) {
                     updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
@@ -116,21 +128,24 @@ public class BondBridgeHandler extends BaseBridgeHandler {
                 }
             } else {
                 try {
-                    InetAddress.getByName(config.bondIpAddress);
+                    InetAddress.getByName(config.bridgeIP);
                 } catch (UnknownHostException ignored) {
                     updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
                             "IP Address or host name for Bond Bridge is not valid");
+                    return; // BUG? Without this, the initialize routine will fall through to attempt to
+                            // updateBridgeProperties without a valid address
                 }
             }
         }
 
-        // Ask the bridge it's current status and update the properties with the info
+        // Ask the bridge it's current status and update the properties with the sys info
+        // and subsequently ask the bridge it's current configuration for prepopulating name/location
         // This will also set the thing status to online/offline based on whether it
         // succeeds in getting the properties from the bridge.
         updateBridgeProperties();
 
         // Finish
-        logger.debug("Finished initializing Bond bridge!");
+        logger.debug("Finished initializing Bond bridge - starting device discovery!");
     }
 
     @Override
@@ -233,13 +248,13 @@ public class BondBridgeHandler extends BaseBridgeHandler {
      */
     public @Nullable String getBridgeIpAddress() {
         BondBridgeConfiguration config = getConfigAs(BondBridgeConfiguration.class);
-        return config.bondIpAddress;
+        return config.bridgeIP;
     }
 
     /**
      * Returns the local token of the bridge associated with the handler as a string
      */
-    public String getBridgeToken() {
+    public @Nullable String getBridgeToken() {
         BondBridgeConfiguration config = getConfigAs(BondBridgeConfiguration.class);
         return config.localToken;
     }
@@ -276,12 +291,16 @@ public class BondBridgeHandler extends BaseBridgeHandler {
 
     private void updateBridgeProperties() {
         BondSysVersion myVersion = null;
+        BondBridgeState myState = null;
+
         try {
             myVersion = api.getBridgeVersion();
+            myState = api.getBridgeConfig();
         } catch (IOException e) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
                     "Unable to access Bond local API through bridge");
         }
+
         if (myVersion != null) {
             // Update all the thing properties based on the result
             Map<String, String> thingProperties = new HashMap<String, String>();
@@ -291,9 +310,137 @@ public class BondBridgeHandler extends BaseBridgeHandler {
             thingProperties.put(PROPERTY_FIRMWARE_VERSION, myVersion.firmwareVersion);
             updateProperties(thingProperties);
             updateStatus(ThingStatus.ONLINE);
-        } else {
+        }
+
+        if (myState != null) {
+            // Update the bridge state properties based on the result of it's respective call
+            this.getThing().setLocation(myState.location);
+            this.getThing().setLabel(myState.name);
+        }
+
+        if (myVersion == null) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
                     "Unable get Bond bridge version via API");
         }
+    }
+
+    @Override
+    public @Nullable String getLabel() {
+        return this.getThing().getLabel();
+    }
+
+    @Override
+    public void setLabel(@Nullable String label) {
+        this.getThing().setLabel(label);
+    }
+
+    @Override
+    public List<Channel> getChannels() {
+        return this.getThing().getChannels();
+    }
+
+    @Override
+    public List<Channel> getChannelsOfGroup(String channelGroupId) {
+        return this.getThing().getChannelsOfGroup(channelGroupId);
+    }
+
+    @Override
+    public @Nullable Channel getChannel(String channelId) {
+        return this.getThing().getChannel(channelId);
+    }
+
+    @Override
+    public @Nullable Channel getChannel(ChannelUID channelUID) {
+        return this.getThing().getChannel(channelUID);
+    }
+
+    @Override
+    public ThingStatus getStatus() {
+        return this.getThing().getStatus();
+    }
+
+    @Override
+    public ThingStatusInfo getStatusInfo() {
+        return this.getThing().getStatusInfo();
+    }
+
+    @Override
+    public void setStatusInfo(ThingStatusInfo status) {
+        this.getThing().setStatusInfo(status);
+    }
+
+    @Override
+    public void setHandler(@Nullable ThingHandler thingHandler) {
+        this.getThing().setHandler(thingHandler);
+    }
+
+    @Override
+    public @Nullable ThingUID getBridgeUID() {
+        return this.getThing().getBridgeUID();
+    }
+
+    @Override
+    public void setBridgeUID(@Nullable ThingUID bridgeUID) {
+        this.getThing().setBridgeUID(bridgeUID);
+    }
+
+    @Override
+    public Configuration getConfiguration() {
+        return this.getThing().getConfiguration();
+    }
+
+    @Override
+    public ThingUID getUID() {
+        return this.getThing().getUID();
+    }
+
+    @Override
+    public ThingTypeUID getThingTypeUID() {
+        return this.getThing().getThingTypeUID();
+    }
+
+    @Override
+    public Map<String, String> getProperties() {
+        return this.getThing().getProperties();
+    }
+
+    @Override
+    public @Nullable String setProperty(String name, @Nullable String value) {
+        return this.getThing().setProperty(name, value);
+    }
+
+    @Override
+    public void setProperties(Map<String, String> properties) {
+        this.getThing().setProperties(properties);
+    }
+
+    @Override
+    public @Nullable String getLocation() {
+        return this.getThing().getLocation();
+    }
+
+    @Override
+    public void setLocation(@Nullable String location) {
+        this.getThing().setLocation(location);
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return this.getThing().isEnabled();
+    }
+
+    @Override
+    public @Nullable Thing getThing(ThingUID thingUID) {
+        return this.getThing().getThing(thingUID);
+    }
+
+    @Override
+    public List<Thing> getThings() {
+        return this.getThing().getThings();
+    }
+
+    @Override
+    public @Nullable BridgeHandler getHandler() {
+        return this.getThing().getHandler();
     }
 }

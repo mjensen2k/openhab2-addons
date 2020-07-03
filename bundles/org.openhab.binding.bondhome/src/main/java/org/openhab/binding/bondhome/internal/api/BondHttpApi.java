@@ -50,13 +50,28 @@ import com.google.gson.JsonParser;
 @NonNullByDefault
 public class BondHttpApi {
     private final Logger logger = LoggerFactory.getLogger(BondHttpApi.class);
-    private final BondBridgeHandler bridgeHandler;
+    private final @Nullable BondBridgeHandler bridgeHandler;
     private Gson gson = new Gson();
+
+    public BondHttpApi() { // allow creation before a bridgeHanlder is available, i.e. in the discovery code
+        this.bridgeHandler = null;
+    }
 
     public BondHttpApi(BondBridgeHandler bridgeHandler) {
         this.bridgeHandler = bridgeHandler;
     }
 
+
+     /**
+     * Submit GET request and return response, check for invalid responses
+     *
+     * @param uri: URI (e.g. "/settings")
+     */
+    @Nullable
+    public BondSysVersion getBridgeVersion() throws IOException {
+        return getBridgeVersion("");
+    }
+    
     /**
      * Gets version information about the Bond bridge
      *
@@ -64,10 +79,25 @@ public class BondHttpApi {
      * @throws IOException
      */
     @Nullable
-    public BondSysVersion getBridgeVersion() throws IOException {
-        String json = request("/v2/sys/version");
+    public BondSysVersion getBridgeVersion(String ipAddress) throws IOException {
+        String ipToUse = ipAddress.length() > 0 ? ipAddress : bridgeHandler.getBridgeIpAddress();
+
+        String json = request("/v2/sys/version",ipToUse);
         logger.trace("BondHome device info : {}", json);
         return gson.fromJson(json, BondSysVersion.class);
+    }
+
+    /**
+     * Gets version information about the Bond bridge
+     *
+     * @return the {@link BondBridgeState}
+     * @throws IOException
+     */
+    @Nullable
+    public BondBridgeState getBridgeConfig() throws IOException {
+        String json = request("/v2/bridge");
+        logger.trace("BondHome device config : {}", json);
+        return gson.fromJson(json, BondBridgeState.class);
     }
 
     /**
@@ -163,21 +193,34 @@ public class BondHttpApi {
         }
     }
 
-    /**
+     /**
      * Submit GET request and return response, check for invalid responses
      *
      * @param uri: URI (e.g. "/settings")
      */
     private synchronized String request(String uri) throws IOException {
+        return request(uri, "");
+    }
+
+     /**
+     * Submit GET request to specific IP and return response, check for invalid responses
+     *
+     * @param uri: URI (e.g. "/settings")
+     * @param ipAddress: ipAddress (e.g. "10.10.10.10")
+     */
+     private synchronized String request(String uri, String ipAddress) throws IOException {
+        String ipToUse = ipAddress.length() > 0 ? ipAddress : bridgeHandler.getBridgeIpAddress();
+        String tokenToUse = bridgeHandler == null ? "" : bridgeHandler.getBridgeToken();
+
         String httpResponse = "ERROR";
-        String url = "http://" + bridgeHandler.getBridgeIpAddress() + uri;
+        String url = "http://" + ipToUse + uri;
         int numRetriesRemaining = 3;
         do {
             try {
                 logger.debug("HTTP GET to {}", url);
 
                 final Properties headers = new Properties();
-                headers.put("BOND-Token", bridgeHandler.getBridgeToken());
+                headers.put("BOND-Token", tokenToUse);
 
                 httpResponse = HttpUtil.executeUrl(HttpMethod.GET, url, headers, null, "", BOND_API_TIMEOUT_MS);
                 Validate.notNull(httpResponse, "httpResponse must not be null");

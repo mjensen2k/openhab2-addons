@@ -14,6 +14,7 @@ package org.openhab.binding.bondhome.internal;
 
 import static org.openhab.binding.bondhome.internal.BondHomeBindingConstants.*;
 
+import java.util.Dictionary;
 import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.Map;
@@ -21,6 +22,7 @@ import java.util.Map;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.smarthome.config.discovery.DiscoveryService;
+import org.eclipse.smarthome.core.net.NetworkAddressService;
 import org.eclipse.smarthome.core.thing.Bridge;
 import org.eclipse.smarthome.core.thing.Thing;
 import org.eclipse.smarthome.core.thing.ThingTypeUID;
@@ -32,7 +34,10 @@ import org.openhab.binding.bondhome.internal.discovery.BondDiscoveryService;
 import org.openhab.binding.bondhome.internal.handler.BondBridgeHandler;
 import org.openhab.binding.bondhome.internal.handler.BondDeviceHandler;
 import org.osgi.framework.ServiceRegistration;
+import org.osgi.service.component.ComponentContext;
+import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Reference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,12 +47,27 @@ import org.slf4j.LoggerFactory;
  *
  * @author Sara Geleskie Damiano - Initial contribution
  */
-@NonNullByDefault
 @Component(configurationPid = "binding.bondhome", service = ThingHandlerFactory.class)
+@NonNullByDefault
 public class BondHomeHandlerFactory extends BaseThingHandlerFactory {
     private Logger logger = LoggerFactory.getLogger(BondHomeHandlerFactory.class);
 
     private Map<ThingUID, ServiceRegistration<?>> discoveryServiceRegs = new HashMap<>();
+
+    /** url (scheme+server+port) to use for playing notification sounds. */
+    private @Nullable String callbackUrl;
+
+    @Activate
+    public BondHomeHandlerFactory(final @Reference NetworkAddressService networkAddressService) {
+        logger.debug("Creating new instance of BondHomeHandlerFactory");
+    }
+
+    @Override
+    protected void activate(ComponentContext componentContext) {
+        super.activate(componentContext);
+        Dictionary<String, Object> properties = componentContext.getProperties();
+        callbackUrl = (String) properties.get("callbackUrl");
+    }
 
     @Override
     public boolean supportsThingType(ThingTypeUID thingTypeUID) {
@@ -65,7 +85,9 @@ public class BondHomeHandlerFactory extends BaseThingHandlerFactory {
 
             logger.trace("Creating handler for Bond bridge with type UID {}", thingTypeUID);
             final BondBridgeHandler handler = new BondBridgeHandler((Bridge) thing);
+
             registerDeviceDiscoveryService(handler);
+
             return handler;
         } else if (SUPPORTED_DEVICE_TYPES.contains(thingTypeUID)) {
             logger.trace("Creating handler for Bond device with type UID {}", thingTypeUID);
@@ -74,7 +96,7 @@ public class BondHomeHandlerFactory extends BaseThingHandlerFactory {
 
         return null;
     }
-
+    
     @Override
     protected synchronized void removeHandler(ThingHandler thingHandler) {
         logger.trace("Removing Bond Handler");
